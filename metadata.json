@@ -1,0 +1,7 @@
+{
+  "name": "ごみしるべ",
+  "description": "日々のゴミ出しを優しく導く。AIが毎日の挨拶と分別をサポートします。",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
