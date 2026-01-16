@@ -31,7 +31,6 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // データ移行: notificationTime (string) -> notificationTimes (string[])
         const notificationTimes = parsed.notificationTimes || [parsed.notificationTime || '08:00'];
         const updatedRules = parsed.rules.map((r: any) => ({
           ...r,
@@ -51,7 +50,6 @@ const App: React.FC = () => {
     }
   }, [settings, isLoaded]);
 
-  // 通知チェックロジック
   useEffect(() => {
     const checkNotification = () => {
       const now = new Date();
@@ -59,7 +57,6 @@ const App: React.FC = () => {
                           now.getMinutes().toString().padStart(2, '0');
       const todayKey = now.toDateString();
 
-      // 各設定時間に対してチェック
       settings.notificationTimes.forEach(time => {
         const uniqueKey = `${todayKey}-${time}`;
         if (currentTime === time && !notifiedSetRef.current.has(uniqueKey)) {
@@ -71,7 +68,6 @@ const App: React.FC = () => {
 
     const interval = setInterval(checkNotification, 30000); 
     checkNotification();
-
     return () => clearInterval(interval);
   }, [settings]);
 
@@ -82,8 +78,8 @@ const App: React.FC = () => {
   const NavItem = ({ id, icon: Icon, label }: { id: any, icon: any, label: string }) => (
     <button
       onClick={() => setActiveTab(id)}
-      className={`flex flex-col items-center justify-center w-full py-3 transition-colors ${
-        activeTab === id ? 'text-emerald-600' : 'text-slate-300 hover:text-slate-500'
+      className={`flex flex-col items-center justify-center w-full py-2 transition-all active:scale-90 ${
+        activeTab === id ? 'text-emerald-600' : 'text-slate-300 hover:text-slate-400'
       }`}
     >
       <Icon />
@@ -92,26 +88,26 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen max-w-md mx-auto bg-white flex flex-col shadow-2xl shadow-slate-200">
-      <header className="bg-white/80 backdrop-blur-md px-6 py-5 border-b border-slate-50 flex items-center justify-between sticky top-0 z-20">
+    <div className="min-h-screen max-w-md mx-auto bg-white flex flex-col shadow-none sm:shadow-2xl">
+      <header className="bg-white/90 backdrop-blur-lg px-6 py-4 border-b border-slate-50 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-2.5">
-          <div className="bg-emerald-500 p-2 rounded-2xl text-white shadow-lg shadow-emerald-100">
+          <div className="bg-emerald-500 p-1.5 rounded-xl text-white shadow-lg shadow-emerald-100">
             <Icons.Trash />
           </div>
-          <h1 className="font-black text-2xl text-slate-800 tracking-tighter">ごみしるべ</h1>
+          <h1 className="font-black text-xl text-slate-800 tracking-tighter">ごみしるべ</h1>
         </div>
-        <div className="text-[10px] bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full font-black uppercase tracking-widest">
+        <div className="text-[9px] bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full font-black uppercase tracking-widest">
           {settings.notificationTimes.length} Reminders
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-28 bg-slate-50/30">
+      <main className="flex-1 overflow-y-auto pb-24 bg-slate-50/20">
         {activeTab === 'home' && <Dashboard settings={settings} />}
         {activeTab === 'bot' && <SortingBot settings={settings} />}
         {activeTab === 'settings' && <SettingsView settings={settings} onUpdate={updateSettings} />}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-xl border-t border-slate-50 flex items-center justify-around z-30 pb-safe">
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-xl border-t border-slate-50 flex items-center justify-around z-30 pb-safe pt-2">
         <NavItem id="home" icon={Icons.Calendar} label="ホーム" />
         <NavItem id="bot" icon={Icons.Bot} label="ごみしるべAI" />
         <NavItem id="settings" icon={Icons.Settings} label="設定" />
