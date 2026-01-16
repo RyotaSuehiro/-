@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppSettings, GarbageRule, GarbageType, DayOfWeek } from '../types';
 import { DAYS_JP, Icons } from '../constants';
-import { requestNotificationPermission } from '../services/notificationService';
+import { requestNotificationPermission, sendTestNotification } from '../services/notificationService';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -15,6 +15,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'denied'
   );
+  const [isTestLoading, setIsTestLoading] = useState(false);
 
   useEffect(() => {
     setUserName(settings.userName);
@@ -30,7 +31,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
 
   const addTime = () => {
     const lastTime = notificationTimes[notificationTimes.length - 1] || '08:00';
-    // 前の時間から5分後をデフォルトにする
     const [h, m] = lastTime.split(':').map(Number);
     const newDate = new Date();
     newDate.setHours(h, m + 5);
@@ -45,12 +45,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
     const newTimes = [...notificationTimes];
     newTimes[index] = value;
     setNotificationTimes(newTimes);
-    // 更新した時点ですぐ保存（debounceなしでもタイムピッカーなら許容範囲）
     onUpdate({ ...settings, notificationTimes: newTimes.sort() });
   };
 
   const removeTime = (index: number) => {
-    if (notificationTimes.length <= 1) return; // 少なくとも1つは残す
+    if (notificationTimes.length <= 1) return;
     const newTimes = notificationTimes.filter((_, i) => i !== index);
     setNotificationTimes(newTimes);
     onUpdate({ ...settings, notificationTimes: newTimes });
@@ -59,6 +58,15 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
   const handleRequestPermission = async () => {
     const granted = await requestNotificationPermission();
     setPermissionStatus(granted ? 'granted' : 'denied');
+    if (granted) {
+      alert('通知が許可されました！「テスト通知」で動作を確認してみてください。');
+    }
+  };
+
+  const handleTestNotification = () => {
+    setIsTestLoading(true);
+    sendTestNotification(userName);
+    setTimeout(() => setIsTestLoading(false), 6000);
   };
 
   const removeRule = (id: string) => {
@@ -98,27 +106,43 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
       </div>
 
       {/* Notification Status Banner */}
-      {permissionStatus !== 'granted' && (
-        <div className="mb-8 bg-amber-50 border border-amber-100 p-5 rounded-3xl flex flex-col gap-3">
-          <div className="flex items-start gap-3">
-            <div className="text-amber-500 mt-0.5">
-              <Icons.Bell />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-amber-900">通知がオフになっています</h3>
-              <p className="text-xs text-amber-700 mt-1 leading-relaxed">
-                毎朝のゴミ出し通知を受け取るには、ブラウザの通知許可が必要です。
-              </p>
-            </div>
-          </div>
+      <section className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 mb-8 space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">通知設定</label>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${permissionStatus === 'granted' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+            {permissionStatus === 'granted' ? '許可済み' : '未許可'}
+          </span>
+        </div>
+
+        {permissionStatus !== 'granted' ? (
           <button
             onClick={handleRequestPermission}
-            className="w-full bg-amber-500 text-white py-2.5 rounded-2xl text-xs font-bold shadow-lg shadow-amber-100 active:scale-[0.98] transition-all"
+            className="w-full bg-emerald-500 text-white py-4 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-100 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
           >
+            <Icons.Bell />
             通知を許可する
           </button>
-        </div>
-      )}
+        ) : (
+          <button
+            onClick={handleTestNotification}
+            disabled={isTestLoading}
+            className={`w-full py-4 rounded-2xl text-sm font-bold border-2 border-emerald-500 text-emerald-600 transition-all flex items-center justify-center gap-3 ${isTestLoading ? 'opacity-50' : 'active:bg-emerald-50'}`}
+          >
+            {isTestLoading ? (
+              '5秒後に通知が届きます...'
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                通知をテストする
+              </>
+            )}
+          </button>
+        )}
+        
+        <p className="text-[10px] text-slate-400 leading-relaxed font-medium px-1">
+          ※ iPhoneの方は、まずSafariの共有メニューから「ホーム画面に追加」を行ってください。追加した後の「ごみしるべ」アプリ内で設定しないと通知は届きません。
+        </p>
+      </section>
 
       {/* User Info Section */}
       <section className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 mb-8 space-y-6">
@@ -169,9 +193,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
               </div>
             ))}
           </div>
-          <p className="mt-3 text-[10px] text-slate-400 leading-relaxed font-medium px-1">
-            ※ 3分後には忘れてしまう場合は、5分おきに数回設定するのがオススメです！
-          </p>
         </div>
       </section>
 
