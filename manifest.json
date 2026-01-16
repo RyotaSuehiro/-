@@ -4,7 +4,9 @@
   "short_name": "ごみしるべ",
   "description": "AIが優しく教えるゴミ出し助手",
   "start_url": "/",
+  "id": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#10b981",
   "icons": [
@@ -14,5 +16,7 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "categories": ["utilities", "lifestyle"],
+  "lang": "ja"
 }

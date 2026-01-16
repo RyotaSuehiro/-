@@ -1,13 +1,25 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { GarbageType } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// APIキーの取得
+const getAiClient = () => {
+  // Viteのdefineまたは環境変数から取得
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey || apiKey === 'undefined') {
+    console.error("Gemini API_KEY is missing. Please set it in Vercel Environment Variables.");
+    return null;
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 /**
  * Generates a friendly morning greeting based on today's garbage.
  */
 export const getMorningGreeting = async (userName: string, garbageList: string[]): Promise<string> => {
+  const ai = getAiClient();
+  if (!ai) return `おはよう、${userName}さん！APIキーの設定を確認してみてね。`;
+
   const prompt = `
     ユーザー名: ${userName}
     今日のゴミ: ${garbageList.length > 0 ? garbageList.join('、') : '今日はゴミ出しはありません'}
@@ -25,7 +37,7 @@ export const getMorningGreeting = async (userName: string, garbageList: string[]
     return response.text?.trim() || "おはようございます！今日も素敵な一日になりますように。";
   } catch (error) {
     console.error("AI Greeting Error:", error);
-    return "おはようございます！ゴミ出しの準備はできましたか？今日も頑張りましょう！";
+    return "おはよう！ゴミ出しの準備はできたかな？今日も頑張ろう！";
   }
 };
 
@@ -33,6 +45,9 @@ export const getMorningGreeting = async (userName: string, garbageList: string[]
  * Provides advice on how to sort specific waste items in a friendly, concise manner.
  */
 export const getSortingAdvice = async (item: string): Promise<string> => {
+  const ai = getAiClient();
+  if (!ai) return "APIキーが設定されていないみたい。Vercelの設定を確認してね。";
+
   const prompt = `
     君はユーザーの親しい友人であり、スマートな掃除のプロです。
     ゴミの分別について、LINEのように端的に、かつ洗練された口調（丁寧すぎず、崩しすぎない）で教えて。

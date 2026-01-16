@@ -8,7 +8,8 @@
     
     <!-- PWA / Mobile Meta -->
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ごみしるべ">
     <meta name="theme-color" content="#10b981">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/542/542713.png">
@@ -24,9 +25,10 @@
             background-color: #f8fafc;
             -webkit-tap-highlight-color: transparent;
             overflow-x: hidden;
+            /* iOSのセーフエリア対応 */
+            padding-top: env(safe-area-inset-top);
         }
 
-        /* カスタムアニメーション */
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideInUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .animate-in { animation-duration: 400ms; animation-fill-mode: both; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
@@ -37,7 +39,6 @@
             padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
         }
         
-        /* スクロールバー非表示 */
         ::-webkit-scrollbar { display: none; }
     </style>
     <script>
@@ -59,7 +60,8 @@
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "@google/genai": "https://esm.sh/@google/genai@^1.35.0"
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+    "vite": "https://esm.sh/vite@^7.3.1"
   }
 }
 </script>
@@ -67,7 +69,6 @@
 <body>
     <div id="root"></div>
     <script>
-      // サービスワーカーの登録（PWA化に必須）
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed:', err));
