@@ -11,13 +11,28 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ settings }) => {
   const [greeting, setGreeting] = useState<string>('読み込み中...');
+  const [isGreetingLoading, setIsGreetingLoading] = useState(false);
   const [weekSchedule, setWeekSchedule] = useState<{ dayIdx: number, rules: GarbageRule[] }[]>([]);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const today = new Date();
   const todayGarbage = getGarbageForDate(settings.rules, today);
+
+  const fetchGreeting = async (force: boolean = false) => {
+    if (isGreetingLoading) return;
+    setIsGreetingLoading(true);
+    if (force) setGreeting('考え中...');
+    
+    try {
+      const g = await getMorningGreeting(settings.userName, todayGarbage.map(r => r.type));
+      setGreeting(g);
+    } catch (e) {
+      setGreeting("おはよう！今日も一日、自分のペースで頑張ろう。");
+    } finally {
+      setIsGreetingLoading(false);
+    }
+  };
 
   useEffect(() => {
     const currentDay = today.getDay();
@@ -35,13 +50,8 @@ const Dashboard: React.FC<DashboardProps> = ({ settings }) => {
     }
     setWeekSchedule(schedule);
 
-    const fetchGreeting = async () => {
-      const g = await getMorningGreeting(settings.userName, todayGarbage.map(r => r.type));
-      setGreeting(g);
-    };
     fetchGreeting();
 
-    // 今日の完了フラグをチェック
     const completedKey = `completed_${today.toDateString()}`;
     if (localStorage.getItem(completedKey)) {
       setIsCompleted(true);
@@ -56,13 +66,9 @@ const Dashboard: React.FC<DashboardProps> = ({ settings }) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-
     const types = todayGarbage.map(r => r.type).join('、');
     const message = `【ゴミ出し完了！】\n${settings.userName}さんが「${types}」を捨ててきました！📸\n今日も一日頑張りましょう！`;
 
-    // Web Share APIを使用してLINE等へシェア
     if (navigator.share) {
       try {
         await navigator.share({
@@ -73,10 +79,8 @@ const Dashboard: React.FC<DashboardProps> = ({ settings }) => {
         finalizeCompletion();
       } catch (err) {
         console.log('Share failed or cancelled', err);
-        // キャンセルされてもプレビューは見せる
       }
     } else {
-      // Fallback: LINE URL Scheme (テキストのみ)
       const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(message)}`;
       window.open(lineUrl, '_blank');
       finalizeCompletion();
@@ -86,15 +90,34 @@ const Dashboard: React.FC<DashboardProps> = ({ settings }) => {
   const finalizeCompletion = () => {
     setIsCompleted(true);
     localStorage.setItem(`completed_${today.toDateString()}`, 'true');
-    setPreviewUrl(null);
   };
 
   return (
     <div className="px-5 py-6 animate-in fade-in duration-700">
       {/* AI Greeting Card */}
       <div className="mb-8">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">Today's Message</h2>
-        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex gap-4 items-center">
+        <div className="flex items-center justify-between mb-3 ml-1">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Today's Message</h2>
+          <button 
+            onClick={() => fetchGreeting(true)}
+            disabled={isGreetingLoading}
+            className={`text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg transition-all active:rotate-180 ${isGreetingLoading ? 'opacity-50' : ''}`}
+          >
+            {isGreetingLoading ? '取得中...' : '更新する'}
+          </button>
+        </div>
+        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex gap-4 items-center relative overflow-hidden">
+          {isGreetingLoading && (
+            <div className="absolute inset-x-0 bottom-0 h-0.5 bg-emerald-100 overflow-hidden">
+              <div className="h-full bg-emerald-500 w-1/3 animate-[progress_1.5s_infinite_linear]"></div>
+            </div>
+          )}
+          <style>{`
+            @keyframes progress {
+              0% { transform: translateX(-100%); }
+              100% { transform: translateX(300%); }
+            }
+          `}</style>
           <div className="bg-emerald-500 w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg shadow-emerald-100">
             <Icons.Bot />
           </div>
