@@ -22,8 +22,9 @@ export interface GarbageRule {
 
 export interface AppSettings {
   userName: string;
-  notificationTimes: string[]; // 複数通知対応
+  notificationTimes: string[];
   rules: GarbageRule[];
+  alarmEnabled: boolean; // アラーム音の有効化フラグ
 }
 
 export interface ChatMessage {

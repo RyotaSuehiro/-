@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { AppSettings, GarbageRule, GarbageType, DayOfWeek } from '../types';
 import { DAYS_JP, Icons } from '../constants';
 import { requestNotificationPermission, sendTestNotification } from '../services/notificationService';
+import { generateIcsFile } from '../utils/icsGenerator';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -24,6 +25,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
   useEffect(() => {
     setNotificationTimes(settings.notificationTimes);
   }, [settings.notificationTimes]);
+
+  const toggleAlarm = () => {
+    onUpdate({ ...settings, alarmEnabled: !settings.alarmEnabled });
+  };
 
   const handleNameBlur = () => {
     onUpdate({ ...settings, userName });
@@ -58,15 +63,25 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
   const handleRequestPermission = async () => {
     const granted = await requestNotificationPermission();
     setPermissionStatus(granted ? 'granted' : 'denied');
-    if (granted) {
-      alert('通知が許可されました！「テスト通知」で動作を確認してみてください。');
-    }
   };
 
   const handleTestNotification = () => {
     setIsTestLoading(true);
     sendTestNotification(userName);
     setTimeout(() => setIsTestLoading(false), 6000);
+  };
+
+  const handleExportIcs = () => {
+    const icsContent = generateIcsFile(settings);
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.setAttribute('download', 'garbage_schedule.ics');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    alert('カレンダー設定ファイルをダウンロードしました。iPhoneでこれを開いて「すべて追加」を押すと、標準アラームとして登録されます！');
   };
 
   const removeRule = (id: string) => {
@@ -105,89 +120,67 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
         </div>
       </div>
 
-      {/* Notification Status Banner */}
-      <section className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 mb-8 space-y-4">
-        <div className="flex items-center justify-between px-1">
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">通知設定</label>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${permissionStatus === 'granted' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-            {permissionStatus === 'granted' ? '許可済み' : '未許可'}
-          </span>
+      {/* External Sync Section (Calendar Alarm) */}
+      <section className="bg-blue-600 rounded-[32px] p-6 shadow-xl shadow-blue-100 mb-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -translate-y-8 translate-x-8"></div>
+        <div className="relative z-10 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 p-2 rounded-2xl text-white">
+              <Icons.Calendar className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-black text-white">iPhoneアラーム連携</h3>
+          </div>
+          <p className="text-[10px] text-blue-100 font-bold leading-relaxed">
+            iPhone標準のカレンダーにゴミ出し予定を登録します。アプリを閉じていても、iPhoneがアラームを鳴らしてくれるようになります。
+          </p>
+          <button
+            onClick={handleExportIcs}
+            className="w-full bg-white text-blue-600 py-3.5 rounded-2xl text-[11px] font-black shadow-lg active:scale-[0.98] transition-all"
+          >
+            カレンダーに登録する
+          </button>
         </div>
-
-        {permissionStatus !== 'granted' ? (
-          <button
-            onClick={handleRequestPermission}
-            className="w-full bg-emerald-500 text-white py-4 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-100 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
-          >
-            <Icons.Bell />
-            通知を許可する
-          </button>
-        ) : (
-          <button
-            onClick={handleTestNotification}
-            disabled={isTestLoading}
-            className={`w-full py-4 rounded-2xl text-sm font-bold border-2 border-emerald-500 text-emerald-600 transition-all flex items-center justify-center gap-3 ${isTestLoading ? 'opacity-50' : 'active:bg-emerald-50'}`}
-          >
-            {isTestLoading ? (
-              '5秒後に通知が届きます...'
-            ) : (
-              <>
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                通知をテストする
-              </>
-            )}
-          </button>
-        )}
-        
-        <p className="text-[10px] text-slate-400 leading-relaxed font-medium px-1">
-          ※ iPhoneの方は、まずSafariの共有メニューから「ホーム画面に追加」を行ってください。追加した後の「ごみしるべ」アプリ内で設定しないと通知は届きません。
-        </p>
       </section>
 
       {/* User Info Section */}
-      <section className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 mb-8 space-y-6">
+      <section className="bg-white rounded-[32px] p-6 shadow-sm border border-slate-100 mb-8 space-y-6">
         <div>
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">ユーザー名</label>
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">ユーザー名</label>
           <input
             type="text"
             value={userName}
             onChange={(e) => setUserName(e.target.value)}
             onBlur={handleNameBlur}
-            placeholder="お名前を入力"
-            className="w-full bg-slate-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-emerald-500 transition-all font-bold text-slate-700 placeholder-slate-300 outline-none"
+            placeholder="お名前"
+            className="w-full bg-slate-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-emerald-500 transition-all font-black text-slate-700 outline-none"
           />
         </div>
 
         <div>
-          <div className="flex items-center justify-between mb-2 px-1">
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">リマインド時間 (複数可)</label>
+          <div className="flex items-center justify-between mb-3 px-1">
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">通知時間</label>
             <button 
               onClick={addTime}
-              className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg"
+              className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full"
             >
-              ＋ 追加
+              追加
             </button>
           </div>
           <div className="space-y-3">
             {notificationTimes.map((time, idx) => (
               <div key={idx} className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="time"
-                    value={time}
-                    onChange={(e) => updateTime(idx, e.target.value)}
-                    className="w-full bg-slate-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-emerald-500 transition-all font-bold text-slate-700 outline-none"
-                  />
-                  <div className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
-                    <Icons.Bell />
-                  </div>
-                </div>
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => updateTime(idx, e.target.value)}
+                  className="flex-1 bg-slate-50 border-none rounded-2xl px-5 py-4 font-black text-slate-700 outline-none"
+                />
                 {notificationTimes.length > 1 && (
                   <button 
                     onClick={() => removeTime(idx)}
-                    className="bg-rose-50 text-rose-400 p-4 rounded-2xl transition-colors"
+                    className="bg-rose-50 text-rose-400 px-4 rounded-2xl"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    <Icons.Plus className="rotate-45" />
                   </button>
                 )}
               </div>
@@ -196,107 +189,57 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdate }) => {
         </div>
       </section>
 
-      {/* Rules Section */}
+      {/* Existing Rules Section... */}
       <section className="space-y-4">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest">ゴミ出しルール</h2>
           <button
             onClick={addDefaultRule}
-            className="flex items-center gap-1.5 bg-emerald-500 text-white px-3 py-1.5 rounded-full text-[10px] font-bold shadow-lg shadow-emerald-100 active:scale-95 transition-transform"
+            className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full"
           >
-            <Icons.Plus />
-            種類を追加
+            ＋ ルールを追加
           </button>
         </div>
 
         <div className="space-y-4">
           {settings.rules.map((rule) => (
-            <div key={rule.id} className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-center mb-5">
-                <div className="flex items-center gap-2">
-                  <div className="bg-slate-50 p-2 rounded-xl text-slate-400">
-                    <Icons.Trash />
-                  </div>
-                  <select
-                    value={rule.type}
-                    onChange={(e) => updateRule(rule.id, { type: e.target.value as GarbageType })}
-                    className="bg-transparent font-bold text-slate-800 rounded-lg py-1 outline-none text-sm appearance-none cursor-pointer"
-                  >
-                    {Object.values(GarbageType).map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  onClick={() => removeRule(rule.id)}
-                  className="bg-rose-50 text-rose-400 hover:text-rose-600 hover:bg-rose-100 p-2 rounded-xl transition-colors"
+            <div key={rule.id} className="bg-white border border-slate-50 rounded-[32px] p-6 shadow-sm transition-shadow">
+              <div className="flex justify-between items-center mb-6">
+                <select
+                  value={rule.type}
+                  onChange={(e) => updateRule(rule.id, { type: e.target.value as GarbageType })}
+                  className="bg-slate-50 font-black text-slate-800 rounded-xl px-4 py-2 outline-none text-xs appearance-none cursor-pointer"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  {Object.values(GarbageType).map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+                <button onClick={() => removeRule(rule.id)} className="text-rose-300">
+                  <Icons.Plus className="rotate-45 w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-5">
-                <div>
-                  <span className="text-[10px] font-bold text-slate-300 uppercase block mb-2 px-1">曜日を選択 (複数可)</span>
-                  <div className="flex justify-between gap-1">
-                    {DAYS_JP.map((day, idx) => {
-                      const isSelected = rule.daysOfWeek.includes(idx as DayOfWeek);
-                      return (
-                        <button
-                          key={day}
-                          onClick={() => {
-                            const newDays = isSelected
-                              ? rule.daysOfWeek.filter(d => d !== idx)
-                              : [...rule.daysOfWeek, idx as DayOfWeek].sort();
-                            updateRule(rule.id, { daysOfWeek: newDays });
-                          }}
-                          className={`w-9 h-9 rounded-2xl flex items-center justify-center text-xs font-bold transition-all ${
-                            isSelected
-                              ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-100 scale-105'
-                              : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
-                          }`}
-                        >
-                          {day}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-slate-50">
-                  <span className="text-[10px] font-bold text-slate-300 uppercase block mb-2 px-1">実施する週</span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => updateRule(rule.id, { weeksOfMonth: [] })}
-                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold transition-all ${
-                        rule.weeksOfMonth.length === 0 
-                          ? 'bg-emerald-500 text-white shadow-md' 
-                          : 'bg-slate-50 text-slate-400'
-                      }`}
-                    >
-                      毎週
-                    </button>
-                    <div className="flex gap-1.5">
-                      {[1, 2, 3, 4, 5].map(week => (
-                        <button
-                          key={week}
-                          onClick={() => {
-                            const newWeeks = rule.weeksOfMonth.includes(week)
-                              ? rule.weeksOfMonth.filter(w => w !== week)
-                              : [...rule.weeksOfMonth, week].sort();
-                            updateRule(rule.id, { weeksOfMonth: newWeeks });
-                          }}
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-bold transition-all ${
-                            rule.weeksOfMonth.includes(week)
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-50 text-slate-300'
-                          }`}
-                        >
-                          第{week}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              <div className="space-y-6">
+                <div className="flex justify-between gap-1">
+                  {DAYS_JP.map((day, idx) => {
+                    const isSelected = rule.daysOfWeek.includes(idx as DayOfWeek);
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => {
+                          const newDays = isSelected
+                            ? rule.daysOfWeek.filter(d => d !== idx)
+                            : [...rule.daysOfWeek, idx as DayOfWeek].sort();
+                          updateRule(rule.id, { daysOfWeek: newDays });
+                        }}
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black transition-all ${
+                          isSelected ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-50 text-slate-300'
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

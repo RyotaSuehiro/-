@@ -12,6 +12,7 @@ const STORAGE_KEY = 'gominabi_settings';
 const DEFAULT_SETTINGS: AppSettings = {
   userName: 'ユーザー',
   notificationTimes: ['08:00'],
+  alarmEnabled: false,
   rules: [
     { id: '1', type: GarbageType.BURNABLE, daysOfWeek: [1, 4], weeksOfMonth: [] },
     { id: '2', type: GarbageType.PLASTIC, daysOfWeek: [3], weeksOfMonth: [] },
@@ -31,12 +32,7 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const notificationTimes = parsed.notificationTimes || [parsed.notificationTime || '08:00'];
-        const updatedRules = parsed.rules.map((r: any) => ({
-          ...r,
-          daysOfWeek: r.daysOfWeek || [r.dayOfWeek]
-        }));
-        setSettings({ ...parsed, notificationTimes, rules: updatedRules });
+        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
       } catch (e) {
         console.error("Failed to parse settings", e);
       }
@@ -61,6 +57,10 @@ const App: React.FC = () => {
         const uniqueKey = `${todayKey}-${time}`;
         if (currentTime === time && !notifiedSetRef.current.has(uniqueKey)) {
           sendGarbageNotification(settings);
+          // アラーム音機能（アプリが前面にいる場合のみ可能）
+          if (settings.alarmEnabled) {
+            playAlarmSound();
+          }
           notifiedSetRef.current.add(uniqueKey);
         }
       });
@@ -70,6 +70,16 @@ const App: React.FC = () => {
     checkNotification();
     return () => clearInterval(interval);
   }, [settings]);
+
+  const playAlarmSound = () => {
+    try {
+      // 短い通知音を鳴らす（ユーザーが一度画面をタップしている必要があります）
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+      audio.play().catch(e => console.log("Audio play blocked by browser"));
+    } catch (e) {
+      console.error("Audio playback error", e);
+    }
+  };
 
   const updateSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
@@ -97,7 +107,7 @@ const App: React.FC = () => {
           <h1 className="font-black text-xl text-slate-800 tracking-tighter">ごみしるべ</h1>
         </div>
         <div className="text-[9px] bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full font-black uppercase tracking-widest">
-          {settings.notificationTimes.length} Reminders
+          {settings.alarmEnabled ? 'Alarm Mode On' : `${settings.notificationTimes.length} Reminders`}
         </div>
       </header>
 
