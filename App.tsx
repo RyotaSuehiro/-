@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard';
 import SettingsView from './components/SettingsView';
 import SortingBot from './components/SortingBot';
 import { sendGarbageNotification } from './services/notificationService';
+import { getGarbageForDate } from './utils/garbageCalculator';
 
 const STORAGE_KEY = 'gominabi_settings';
 
@@ -27,6 +28,10 @@ const App: React.FC = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const notifiedSetRef = useRef<Set<string>>(new Set());
 
+  // URLパラメータでAPIモード（Siri/アラーム連携用）かどうかを判定
+  const urlParams = new URLSearchParams(window.location.search);
+  const mode = urlParams.get('mode');
+
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -46,6 +51,31 @@ const App: React.FC = () => {
     }
   }, [settings, isLoaded]);
 
+  // --- Siri / iPhoneショートカット専用のレスポンス ---
+  if (mode === 'api' && isLoaded) {
+    const today = new Date();
+    const todayGarbage = getGarbageForDate(settings.rules, today);
+    const garbageText = todayGarbage.length > 0 
+      ? `今日は、${todayGarbage.map(r => r.type).join('、')}の日です。`
+      : "今日は、ゴミ出しの予定はありません。";
+    
+    // JSON形式で返す（ショートカット側で解析しやすくするため）
+    const responseData = {
+      message: garbageText,
+      userName: settings.userName,
+      times: settings.notificationTimes, // 設定されている全ての通知時間
+      hasGarbage: todayGarbage.length > 0
+    };
+
+    return (
+      <div className="p-10 bg-slate-900 min-h-screen flex items-center justify-center text-center">
+        <pre className="text-emerald-400 font-mono text-left bg-slate-800 p-6 rounded-3xl overflow-auto max-w-full">
+          {JSON.stringify(responseData, null, 2)}
+        </pre>
+      </div>
+    );
+  }
+
   useEffect(() => {
     const checkNotification = () => {
       const now = new Date();
@@ -57,10 +87,6 @@ const App: React.FC = () => {
         const uniqueKey = `${todayKey}-${time}`;
         if (currentTime === time && !notifiedSetRef.current.has(uniqueKey)) {
           sendGarbageNotification(settings);
-          // アラーム音機能（アプリが前面にいる場合のみ可能）
-          if (settings.alarmEnabled) {
-            playAlarmSound();
-          }
           notifiedSetRef.current.add(uniqueKey);
         }
       });
@@ -70,20 +96,6 @@ const App: React.FC = () => {
     checkNotification();
     return () => clearInterval(interval);
   }, [settings]);
-
-  const playAlarmSound = () => {
-    try {
-      // 短い通知音を鳴らす（ユーザーが一度画面をタップしている必要があります）
-      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-      audio.play().catch(e => console.log("Audio play blocked by browser"));
-    } catch (e) {
-      console.error("Audio playback error", e);
-    }
-  };
-
-  const updateSettings = (newSettings: AppSettings) => {
-    setSettings(newSettings);
-  };
 
   const NavItem = ({ id, icon: Icon, label }: { id: any, icon: any, label: string }) => (
     <button
@@ -106,15 +118,12 @@ const App: React.FC = () => {
           </div>
           <h1 className="font-black text-xl text-slate-800 tracking-tighter">ごみしるべ</h1>
         </div>
-        <div className="text-[9px] bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full font-black uppercase tracking-widest">
-          {settings.alarmEnabled ? 'Alarm Mode On' : `${settings.notificationTimes.length} Reminders`}
-        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto pb-24 bg-slate-50/20">
         {activeTab === 'home' && <Dashboard settings={settings} />}
         {activeTab === 'bot' && <SortingBot settings={settings} />}
-        {activeTab === 'settings' && <SettingsView settings={settings} onUpdate={updateSettings} />}
+        {activeTab === 'settings' && <SettingsView settings={settings} onUpdate={setSettings} />}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-xl border-t border-slate-50 flex items-center justify-around z-30 pb-safe pt-2">
