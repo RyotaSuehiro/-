@@ -13,6 +13,8 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showStampPop, setShowStampPop] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   const todayGarbage = getGarbageForDate(settings.rules, today);
@@ -26,38 +28,108 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * 画像を適切なサイズにリサイズして圧縮する
+   */
+  const resizeImage = (base64Str: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        // JPEG形式で圧縮（画質0.7）
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsProcessing(true);
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      const newHistory = { ...settings.history };
-      newHistory[todayStr] = {
-        date: todayStr,
-        status: 'completed',
-        photo: base64
-      };
-      onUpdate({ ...settings, history: newHistory });
-      
-      // 完了アニメーション開始
-      setShowStampPop(true);
-      setTimeout(() => setShowStampPop(false), 2000);
+
+    reader.onload = async (event) => {
+      try {
+        const rawBase64 = event.target?.result as string;
+        
+        // 画像をリサイズして容量を削減
+        const compressedBase64 = await resizeImage(rawBase64);
+        
+        const newHistory = { ...settings.history };
+        newHistory[todayStr] = {
+          date: todayStr,
+          status: 'completed',
+          photo: compressedBase64
+        };
+        
+        // 設定更新
+        onUpdate({ ...settings, history: newHistory });
+        
+        // 完了アニメーション開始
+        setIsProcessing(false);
+        setShowStampPop(true);
+        setTimeout(() => setShowStampPop(false), 2000);
+      } catch (error) {
+        console.error("Image processing error:", error);
+        alert("画像の処理に失敗しました。もう一度お試しください。");
+        setIsProcessing(false);
+      }
     };
+    
+    reader.onerror = () => {
+      alert("ファイルの読み込みに失敗しました。");
+      setIsProcessing(false);
+    };
+
     reader.readAsDataURL(file);
+    // 同じファイルを再度選択できるようにリセット
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   return (
     <div className="px-5 py-6 space-y-8 animate-in fade-in duration-700 relative">
       
+      {/* 処理中オーバーレイ */}
+      {isProcessing && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/60 backdrop-blur-md transition-all">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-emerald-600 font-black text-xs tracking-widest animate-pulse">処理中...</p>
+          </div>
+        </div>
+      )}
+
       {/* 完了ポップアップエフェクト */}
       {showStampPop && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-          <div className="bg-white/80 backdrop-blur-sm inset-0 absolute"></div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none transition-all duration-500">
+          <div className="bg-emerald-500/10 inset-0 absolute animate-in fade-in"></div>
           <div className="relative animate-in zoom-in spin-in-12 duration-500 flex flex-col items-center">
              <div className="text-8xl filter drop-shadow-2xl mb-4">✨</div>
-             <div className="bg-emerald-500 text-white px-6 py-2 rounded-full font-black text-xl shadow-xl">
+             <div className="bg-emerald-500 text-white px-8 py-3 rounded-full font-black text-xl shadow-2xl shadow-emerald-500/40">
                GREAT JOB!
              </div>
           </div>
@@ -94,16 +166,16 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
             <div className="p-8 flex flex-col items-center text-center space-y-6">
               <div 
                 className={`relative w-28 h-28 rounded-full flex items-center justify-center transition-all ${
-                  isCompleted ? 'bg-white' : 'bg-slate-900 shadow-2xl active:scale-95 cursor-pointer ring-8 ring-slate-50'
+                  isCompleted ? 'bg-white overflow-hidden ring-4 ring-emerald-200' : 'bg-slate-900 shadow-2xl active:scale-95 cursor-pointer ring-8 ring-slate-50'
                 }`}
-                onClick={!isCompleted ? handleCompleteClick : undefined}
+                onClick={!isCompleted && !isProcessing ? handleCompleteClick : undefined}
               >
                 {todayRecord?.photo ? (
-                  <img src={todayRecord.photo} alt="Preview" className="w-full h-full object-cover rounded-full border-4 border-white animate-in zoom-in" />
+                  <img src={todayRecord.photo} alt="Preview" className="w-full h-full object-cover animate-in zoom-in" />
                 ) : (
                   <div className="text-white flex flex-col items-center">
                     <Icons.Camera className="w-8 h-8 mb-1" />
-                    <span className="text-[8px] font-black uppercase tracking-tighter">Click!</span>
+                    <span className="text-[8px] font-black uppercase tracking-tighter">撮影する</span>
                   </div>
                 )}
                 {isCompleted && (
@@ -127,7 +199,14 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
                 {!isCompleted && <p className="text-[11px] text-slate-400 font-bold mt-2">写真を撮って「✨」をGET！</p>}
               </div>
             </div>
-            <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+            <input 
+              type="file" 
+              accept="image/*" 
+              capture="environment" 
+              ref={fileInputRef} 
+              className="hidden" 
+              onChange={handleFileChange} 
+            />
           </div>
         ) : (
           <div className="bg-slate-100/50 rounded-[40px] p-10 flex flex-col items-center justify-center text-center border-2 border-dashed border-slate-200">
