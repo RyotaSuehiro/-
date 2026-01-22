@@ -20,14 +20,15 @@ export interface GarbageRule {
   customLabel?: string;
 }
 
+export interface GarbageHistoryRecord {
+  date: string; // ISO string (YYYY-MM-DD)
+  status: 'completed' | 'missed';
+  photo?: string;
+}
+
 export interface AppSettings {
   userName: string;
   notificationTimes: string[];
   rules: GarbageRule[];
-  alarmEnabled: boolean; // アラーム音の有効化フラグ
-}
-
-export interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
+  history: Record<string, GarbageHistoryRecord>; // Key is YYYY-MM-DD
 }
