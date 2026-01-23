@@ -16,21 +16,29 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  // ローカル時間ベースで日付文字列を生成（これが全てのキーになる）
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  
   const todayGarbage = getGarbageForDate(settings.rules, today);
   const nextOccurrences = getNextOccurrences(settings.rules, today, 7);
   
   const todayRecord = settings.history[todayStr];
   const isCompleted = todayRecord?.status === 'completed';
+  
+  // ポイント計算を実行
   const { currentPoints, isGameOver } = calculatePoints(settings);
 
   const handleCompleteClick = () => {
     fileInputRef.current?.click();
   };
 
-  /**
-   * 画像を適切なサイズにリサイズして圧縮する
-   */
+  const handleLineShare = () => {
+    const garbageNames = todayGarbage.map(r => r.type).join('、');
+    const text = `【ごみしるべ】今日のゴミ出し（${garbageNames}）を完了しました！✨\n現在：${currentPoints} PTS 獲得中！\n#ごみしるべ #ゴミ出し`;
+    const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
+    window.open(lineUrl, '_blank');
+  };
+
   const resizeImage = (base64Str: string): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -41,7 +49,6 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
         const MAX_HEIGHT = 800;
         let width = img.width;
         let height = img.height;
-
         if (width > height) {
           if (width > MAX_WIDTH) {
             height *= MAX_WIDTH / width;
@@ -53,13 +60,10 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
             height = MAX_HEIGHT;
           }
         }
-
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        
-        // JPEG形式で圧縮（画質0.7）
         resolve(canvas.toDataURL('image/jpeg', 0.7));
       };
     });
@@ -75,8 +79,6 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
     reader.onload = async (event) => {
       try {
         const rawBase64 = event.target?.result as string;
-        
-        // 画像をリサイズして容量を削減
         const compressedBase64 = await resizeImage(rawBase64);
         
         const newHistory = { ...settings.history };
@@ -86,44 +88,34 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
           photo: compressedBase64
         };
         
-        // 設定更新
+        // 設定を更新。これにより再レンダリングが走り calculatePoints が最新値で再計算されます。
         onUpdate({ ...settings, history: newHistory });
         
-        // 完了アニメーション開始
         setIsProcessing(false);
         setShowStampPop(true);
         setTimeout(() => setShowStampPop(false), 2000);
       } catch (error) {
-        console.error("Image processing error:", error);
-        alert("画像の処理に失敗しました。もう一度お試しください。");
+        console.error("Processing error:", error);
+        alert("処理に失敗しました。");
         setIsProcessing(false);
       }
     };
-    
-    reader.onerror = () => {
-      alert("ファイルの読み込みに失敗しました。");
-      setIsProcessing(false);
-    };
-
     reader.readAsDataURL(file);
-    // 同じファイルを再度選択できるようにリセット
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   return (
     <div className="px-5 py-6 space-y-8 animate-in fade-in duration-700 relative">
       
-      {/* 処理中オーバーレイ */}
       {isProcessing && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/60 backdrop-blur-md transition-all">
           <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-emerald-600 font-black text-xs tracking-widest animate-pulse">処理中...</p>
+            <p className="text-emerald-600 font-black text-xs tracking-widest animate-pulse">記録中...</p>
           </div>
         </div>
       )}
 
-      {/* 完了ポップアップエフェクト */}
       {showStampPop && (
         <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none transition-all duration-500">
           <div className="bg-emerald-500/10 inset-0 absolute animate-in fade-in"></div>
@@ -136,7 +128,6 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
         </div>
       )}
 
-      {/* 1. Welcome & Point Status */}
       <section className="relative px-2">
         <div className="flex justify-between items-end">
           <div>
@@ -144,20 +135,21 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
               {settings.userName}さん、<br/>おはよう！
             </h2>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">
-              {isGameOver ? '⚠️ ポイントがリセットされました' : '今日も一日、気持ちよく。'}
+              {isGameOver ? '⚠️ 連続忘れでポイントがリセットされました' : '今日も一日、気持ちよく。'}
             </p>
           </div>
           <div className="text-right">
             <div className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">Current</div>
             <div className="flex items-baseline justify-end gap-1">
-              <span className="text-5xl font-black text-emerald-500 tracking-tighter">{currentPoints}</span>
+              <span className="text-5xl font-black text-emerald-500 tracking-tighter transition-all duration-500">
+                {currentPoints}
+              </span>
               <span className="text-[11px] font-black text-slate-400">PTS</span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 2. Today's Main Garbage Card */}
       <section>
         {todayGarbage.length > 0 ? (
           <div className={`rounded-[40px] p-1 border-2 transition-all duration-500 ${
@@ -196,7 +188,17 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
                 <h3 className={`text-2xl font-black ${isCompleted ? 'text-emerald-700' : 'text-slate-800'}`}>
                   {isCompleted ? 'スタンプ獲得済！' : '今日はゴミを出す日です'}
                 </h3>
-                {!isCompleted && <p className="text-[11px] text-slate-400 font-bold mt-2">写真を撮って「✨」をGET！</p>}
+                {!isCompleted ? (
+                  <p className="text-[11px] text-slate-400 font-bold mt-2">写真を撮って「✨」をGET！</p>
+                ) : (
+                  <button
+                    onClick={handleLineShare}
+                    className="mt-6 flex items-center gap-2 bg-[#06C755] text-white px-8 py-3 rounded-full text-[12px] font-black shadow-lg shadow-emerald-200/50 active:scale-95 transition-all animate-in slide-in-from-bottom-2"
+                  >
+                    <Icons.Line className="w-4 h-4" />
+                    LINEで共有する
+                  </button>
+                )}
               </div>
             </div>
             <input 
@@ -218,7 +220,6 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
         )}
       </section>
 
-      {/* 3. Upcoming Schedule */}
       <section className="space-y-4">
         <div className="flex items-center justify-between px-2">
           <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">Next 7 Days</h2>
@@ -249,7 +250,6 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
         </div>
       </section>
 
-      {/* 4. Streak Rule Explanation */}
       <section className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl">
         <div className="flex gap-4">
           <div className="bg-emerald-500 w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
