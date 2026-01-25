@@ -1,9 +1,10 @@
 
-import React, { useRef, useState, useEffect } from 'react';
-import { AppSettings, GarbageHistoryRecord, GarbageType } from '../types';
+import React, { useRef, useState } from 'react';
+import { AppSettings } from '../types';
 import { getGarbageForDate, getNextOccurrences } from '../utils/garbageCalculator';
-import { GARBAGE_COLORS, GARBAGE_ICONS, Icons } from '../constants';
+import { GARBAGE_COLORS, Icons } from '../constants';
 import { calculatePoints } from '../utils/pointCalculator';
+import { formatLocalDate } from '../utils/dateUtils';
 
 interface DashboardProps {
   settings: AppSettings;
@@ -16,8 +17,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const today = new Date();
-  // ローカル時間ベースで日付文字列を生成（これが全てのキーになる）
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const todayStr = formatLocalDate(today);
   
   const todayGarbage = getGarbageForDate(settings.rules, today);
   const nextOccurrences = getNextOccurrences(settings.rules, today, 7);
@@ -25,7 +25,6 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
   const todayRecord = settings.history[todayStr];
   const isCompleted = todayRecord?.status === 'completed';
   
-  // ポイント計算を実行
   const { currentPoints, isGameOver } = calculatePoints(settings);
 
   const handleCompleteClick = () => {
@@ -39,33 +38,52 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
     window.open(lineUrl, '_blank');
   };
 
-  const resizeImage = (base64Str: string): Promise<string> => {
-    return new Promise((resolve) => {
+  // ホワイトアウト対策：リサイズ処理をより軽量化
+  const resizeImage = (url: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
       const img = new Image();
-      img.src = base64Str;
+      img.src = url;
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
+        // タイミングをずらしてメモリ負荷を分散
+        setTimeout(() => {
+          const canvas = document.createElement('canvas');
+          // iPhone PWAのメモリ制限を考慮し、さらに小さく(400px)
+          const MAX_SIZE = 400;
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
           }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error("Canvas context failed"));
+            return;
           }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // 画質を 0.4 に。思い出用としては十分で、データ量は激減する
+          const result = canvas.toDataURL('image/jpeg', 0.4);
+          
+          // キャンバスを明示的にクリア（気休めだがメモリ対策）
+          canvas.width = 0;
+          canvas.height = 0;
+          
+          resolve(result);
+        }, 100);
       };
+      img.onerror = () => reject(new Error("Image load failed"));
     });
   };
 
@@ -74,33 +92,36 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
     if (!file) return;
 
     setIsProcessing(true);
-    const reader = new FileReader();
+    
+    // UIのレンダリング（ローディング表示）を優先させるため少し待つ
+    await new Promise(resolve => setTimeout(resolve, 300));
 
-    reader.onload = async (event) => {
-      try {
-        const rawBase64 = event.target?.result as string;
-        const compressedBase64 = await resizeImage(rawBase64);
-        
-        const newHistory = { ...settings.history };
-        newHistory[todayStr] = {
-          date: todayStr,
-          status: 'completed',
-          photo: compressedBase64
-        };
-        
-        // 設定を更新。これにより再レンダリングが走り calculatePoints が最新値で再計算されます。
-        onUpdate({ ...settings, history: newHistory });
-        
-        setIsProcessing(false);
-        setShowStampPop(true);
-        setTimeout(() => setShowStampPop(false), 2000);
-      } catch (error) {
-        console.error("Processing error:", error);
-        alert("処理に失敗しました。");
-        setIsProcessing(false);
-      }
-    };
-    reader.readAsDataURL(file);
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+      const compressedBase64 = await resizeImage(objectUrl);
+      
+      const newHistory = { ...settings.history };
+      newHistory[todayStr] = {
+        date: todayStr,
+        status: 'completed',
+        photo: compressedBase64
+      };
+      
+      onUpdate({ ...settings, history: newHistory });
+      
+      URL.revokeObjectURL(objectUrl);
+      
+      setIsProcessing(false);
+      setShowStampPop(true);
+      setTimeout(() => setShowStampPop(false), 2000);
+    } catch (error) {
+      console.error("Processing error:", error);
+      alert("処理に失敗しました。カメラの解像度を少し下げて撮り直してみてください。");
+      URL.revokeObjectURL(objectUrl);
+      setIsProcessing(false);
+    }
+    
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -108,10 +129,10 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
     <div className="px-5 py-6 space-y-8 animate-in fade-in duration-700 relative">
       
       {isProcessing && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/60 backdrop-blur-md transition-all">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/90 backdrop-blur-sm transition-all">
           <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-emerald-600 font-black text-xs tracking-widest animate-pulse">記録中...</p>
+            <p className="text-emerald-600 font-black text-xs tracking-widest animate-pulse">魔法で小さくしています...</p>
           </div>
         </div>
       )}
@@ -158,7 +179,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
             <div className="p-8 flex flex-col items-center text-center space-y-6">
               <div 
                 className={`relative w-28 h-28 rounded-full flex items-center justify-center transition-all ${
-                  isCompleted ? 'bg-white overflow-hidden ring-4 ring-emerald-200' : 'bg-slate-900 shadow-2xl active:scale-95 cursor-pointer ring-8 ring-slate-50'
+                  isCompleted ? 'bg-white overflow-hidden ring-4 ring-emerald-200 shadow-inner' : 'bg-slate-900 shadow-2xl active:scale-95 cursor-pointer ring-8 ring-slate-50'
                 }`}
                 onClick={!isCompleted && !isProcessing ? handleCompleteClick : undefined}
               >

@@ -3,6 +3,7 @@ import React from 'react';
 import { AppSettings, GarbageHistoryRecord } from '../types';
 import { DAYS_JP } from '../constants';
 import { getGarbageForDate } from '../utils/garbageCalculator';
+import { formatLocalDate } from '../utils/dateUtils';
 
 interface StampCardViewProps {
   settings: AppSettings;
@@ -26,7 +27,7 @@ const StampCardView: React.FC<StampCardViewProps> = ({ settings }) => {
   const getRecordForDay = (day: number | null) => {
     if (!day) return null;
     const date = new Date(currentYear, currentMonth, day);
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(date);
     return settings.history[dateStr];
   };
 
