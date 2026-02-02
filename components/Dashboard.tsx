@@ -31,24 +31,55 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
     fileInputRef.current?.click();
   };
 
-  const handleLineShare = () => {
+  /**
+   * 写真付きで共有（Web Share API）
+   * iPhoneの場合、システム共有シートが開くので、そこからLINEを選択すると写真付きで送れます。
+   */
+  const handleShare = async () => {
     const garbageNames = todayGarbage.map(r => r.type).join('、');
-    const text = `【ごみしるべ】今日のゴミ出し（${garbageNames}）を完了しました！✨\n現在：${currentPoints} PTS 獲得中！\n#ごみしるべ #ゴミ出し`;
+    const shareText = `【ごみしるべ】今日のゴミ出し（${garbageNames}）を完了しました！✨\n現在：${currentPoints} PTS 獲得中！ #ごみしるべ`;
+
+    if (navigator.share && todayRecord?.photo) {
+      try {
+        // base64をBlobに変換してファイルとして共有
+        const response = await fetch(todayRecord.photo);
+        const blob = await response.blob();
+        const file = new File([blob], 'garbage-done.jpg', { type: 'image/jpeg' });
+
+        await navigator.share({
+          files: [file],
+          title: 'ごみしるべ',
+          text: shareText,
+        });
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          // 失敗した場合は従来のテキストのみLINE共有へフォールバック
+          openLineTextOnly(shareText);
+        }
+      }
+    } else {
+      openLineTextOnly(shareText);
+    }
+  };
+
+  const openLineTextOnly = (text: string) => {
     const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
     window.open(lineUrl, '_blank');
   };
 
-  // ホワイトアウト対策：リサイズ処理をより軽量化
+  /**
+   * iPhoneのホワイトアウト（メモリ制限）を回避するための超軽量リサイズ
+   */
   const resizeImage = (url: string): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.src = url;
       img.onload = () => {
-        // タイミングをずらしてメモリ負荷を分散
+        // メモリ解放のタイミングを確保
         setTimeout(() => {
           const canvas = document.createElement('canvas');
-          // iPhone PWAのメモリ制限を考慮し、さらに小さく(400px)
-          const MAX_SIZE = 400;
+          // 保存サイズをさらに最適化（320px: スタンプとして十分、かつメモリに優しい）
+          const MAX_SIZE = 320; 
           let width = img.width;
           let height = img.height;
           
@@ -68,22 +99,26 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           if (!ctx) {
-            reject(new Error("Canvas context failed"));
+            reject(new Error("Canvas failure"));
             return;
           }
+          
+          // 低負荷な描画設定
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'low';
           ctx.drawImage(img, 0, 0, width, height);
           
-          // 画質を 0.4 に。思い出用としては十分で、データ量は激減する
-          const result = canvas.toDataURL('image/jpeg', 0.4);
+          const result = canvas.toDataURL('image/jpeg', 0.5);
           
-          // キャンバスを明示的にクリア（気休めだがメモリ対策）
+          // 使用済みリソースの即時解放
           canvas.width = 0;
           canvas.height = 0;
+          img.src = ""; 
           
           resolve(result);
-        }, 100);
+        }, 50);
       };
-      img.onerror = () => reject(new Error("Image load failed"));
+      img.onerror = () => reject(new Error("Load error"));
     });
   };
 
@@ -93,8 +128,8 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
 
     setIsProcessing(true);
     
-    // UIのレンダリング（ローディング表示）を優先させるため少し待つ
-    await new Promise(resolve => setTimeout(resolve, 300));
+    // システムのメモリ整理を待つ
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     const objectUrl = URL.createObjectURL(file);
 
@@ -116,8 +151,8 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
       setShowStampPop(true);
       setTimeout(() => setShowStampPop(false), 2000);
     } catch (error) {
-      console.error("Processing error:", error);
-      alert("処理に失敗しました。カメラの解像度を少し下げて撮り直してみてください。");
+      console.error("Critical Image Error:", error);
+      alert("申し訳ありません、処理中にメモリが不足しました。もう一度試すか、少し画質を下げて撮影してください。");
       URL.revokeObjectURL(objectUrl);
       setIsProcessing(false);
     }
@@ -129,10 +164,12 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
     <div className="px-5 py-6 space-y-8 animate-in fade-in duration-700 relative">
       
       {isProcessing && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/90 backdrop-blur-sm transition-all">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/95 backdrop-blur-sm transition-all">
           <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-emerald-600 font-black text-xs tracking-widest animate-pulse">魔法で小さくしています...</p>
+            <p className="text-emerald-600 font-black text-xs tracking-widest animate-pulse text-center">
+              メモリを節約しながら<br/>スタンプを作成中...
+            </p>
           </div>
         </div>
       )}
@@ -213,11 +250,11 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
                   <p className="text-[11px] text-slate-400 font-bold mt-2">写真を撮って「✨」をGET！</p>
                 ) : (
                   <button
-                    onClick={handleLineShare}
+                    onClick={handleShare}
                     className="mt-6 flex items-center gap-2 bg-[#06C755] text-white px-8 py-3 rounded-full text-[12px] font-black shadow-lg shadow-emerald-200/50 active:scale-95 transition-all animate-in slide-in-from-bottom-2"
                   >
                     <Icons.Line className="w-4 h-4" />
-                    LINEで共有する
+                    写真付きで共有する
                   </button>
                 )}
               </div>
