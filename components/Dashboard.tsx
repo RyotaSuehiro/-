@@ -32,54 +32,52 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
   };
 
   /**
-   * 写真付きで共有（Web Share API）
-   * iPhoneの場合、システム共有シートが開くので、そこからLINEを選択すると写真付きで送れます。
+   * 写真付き共有機能
+   * navigator.share を使用して、保存した画像をファイルとして送信します
    */
-  const handleShare = async () => {
+  const handleShareWithImage = async () => {
     const garbageNames = todayGarbage.map(r => r.type).join('、');
-    const shareText = `【ごみしるべ】今日のゴミ出し（${garbageNames}）を完了しました！✨\n現在：${currentPoints} PTS 獲得中！ #ごみしるべ`;
+    const shareText = `【ごみしるべ】今日のゴミ出し（${garbageNames}）を完了しました！✨\n現在：${currentPoints} PTS 獲得中！`;
 
-    if (navigator.share && todayRecord?.photo) {
-      try {
-        // base64をBlobに変換してファイルとして共有
-        const response = await fetch(todayRecord.photo);
-        const blob = await response.blob();
-        const file = new File([blob], 'garbage-done.jpg', { type: 'image/jpeg' });
+    try {
+      if (navigator.share && todayRecord?.photo) {
+        // Base64をBlobに変換
+        const blob = await (await fetch(todayRecord.photo)).blob();
+        const file = new File([blob], `garbage-${todayStr}.jpg`, { type: 'image/jpeg' });
 
         await navigator.share({
           files: [file],
           title: 'ごみしるべ',
           text: shareText,
         });
-      } catch (error) {
-        if ((error as Error).name !== 'AbortError') {
-          // 失敗した場合は従来のテキストのみLINE共有へフォールバック
-          openLineTextOnly(shareText);
-        }
+      } else {
+        // 共有機能がない場合は従来のLINEテキスト共有
+        const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`;
+        window.open(lineUrl, '_blank');
       }
-    } else {
-      openLineTextOnly(shareText);
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        console.error("Share error:", err);
+      }
     }
   };
 
-  const openLineTextOnly = (text: string) => {
-    const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
-    window.open(lineUrl, '_blank');
-  };
-
   /**
-   * iPhoneのホワイトアウト（メモリ制限）を回避するための超軽量リサイズ
+   * 超軽量リサイズ処理 (iPhoneのホワイトアウト対策)
    */
-  const resizeImage = (url: string): Promise<string> => {
+  const processImageLightweight = (url: string): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.src = url;
-      img.onload = () => {
-        // メモリ解放のタイミングを確保
-        setTimeout(() => {
+      
+      img.onload = async () => {
+        try {
+          // iPhoneのメモリ解放を待つための微小な待機
+          await new Promise(r => setTimeout(r, 100));
+
           const canvas = document.createElement('canvas');
-          // 保存サイズをさらに最適化（320px: スタンプとして十分、かつメモリに優しい）
-          const MAX_SIZE = 320; 
+          // 徹底的に小さく(300px)。iPhoneのメモリ負荷を最小限に。
+          const MAX_SIZE = 300;
           let width = img.width;
           let height = img.height;
           
@@ -97,28 +95,27 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
           
           canvas.width = width;
           canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error("Canvas failure"));
-            return;
-          }
           
-          // 低負荷な描画設定
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'low';
+          const ctx = canvas.getContext('2d', { alpha: false });
+          if (!ctx) throw new Error("Canvas context error");
+
+          // 描画
           ctx.drawImage(img, 0, 0, width, height);
           
-          const result = canvas.toDataURL('image/jpeg', 0.5);
+          // 画質をさらに落としてデータ量を削減 (0.3)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.3);
           
-          // 使用済みリソースの即時解放
+          // 明示的なメモリ解放
           canvas.width = 0;
           canvas.height = 0;
-          img.src = ""; 
+          img.src = "";
           
-          resolve(result);
-        }, 50);
+          resolve(dataUrl);
+        } catch (e) {
+          reject(e);
+        }
       };
-      img.onerror = () => reject(new Error("Load error"));
+      img.onerror = () => reject(new Error("Image load error"));
     });
   };
 
@@ -128,13 +125,13 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
 
     setIsProcessing(true);
     
-    // システムのメモリ整理を待つ
+    // UIを先に「処理中」に変えるための待機
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    const objectUrl = URL.createObjectURL(file);
+    let objectUrl: string | null = URL.createObjectURL(file);
 
     try {
-      const compressedBase64 = await resizeImage(objectUrl);
+      const compressedBase64 = await processImageLightweight(objectUrl);
       
       const newHistory = { ...settings.history };
       newHistory[todayStr] = {
@@ -145,15 +142,17 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
       
       onUpdate({ ...settings, history: newHistory });
       
-      URL.revokeObjectURL(objectUrl);
+      // 使用済みのURLを即座に破棄
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = null; 
       
       setIsProcessing(false);
       setShowStampPop(true);
       setTimeout(() => setShowStampPop(false), 2000);
     } catch (error) {
-      console.error("Critical Image Error:", error);
-      alert("申し訳ありません、処理中にメモリが不足しました。もう一度試すか、少し画質を下げて撮影してください。");
-      URL.revokeObjectURL(objectUrl);
+      console.error("Critical Image Processing Error:", error);
+      alert("申し訳ありません。画像が大きすぎて処理できませんでした。もう一度お試しいただくか、カメラの設定で少し画質を下げてみてください。");
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       setIsProcessing(false);
     }
     
@@ -163,13 +162,20 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
   return (
     <div className="px-5 py-6 space-y-8 animate-in fade-in duration-700 relative">
       
+      {/* 処理中のオーバーレイ */}
       {isProcessing && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/95 backdrop-blur-sm transition-all">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-emerald-600 font-black text-xs tracking-widest animate-pulse text-center">
-              メモリを節約しながら<br/>スタンプを作成中...
-            </p>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/95 backdrop-blur-md">
+          <div className="flex flex-col items-center gap-6 p-10 text-center">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-emerald-100 rounded-full"></div>
+              <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin absolute top-0"></div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-emerald-600 font-black text-sm tracking-widest">スタンプを作成中</p>
+              <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
+                iPhoneのメモリを節約しながら<br/>安全に処理しています...
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -250,11 +256,11 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
                   <p className="text-[11px] text-slate-400 font-bold mt-2">写真を撮って「✨」をGET！</p>
                 ) : (
                   <button
-                    onClick={handleShare}
+                    onClick={handleShareWithImage}
                     className="mt-6 flex items-center gap-2 bg-[#06C755] text-white px-8 py-3 rounded-full text-[12px] font-black shadow-lg shadow-emerald-200/50 active:scale-95 transition-all animate-in slide-in-from-bottom-2"
                   >
                     <Icons.Line className="w-4 h-4" />
-                    写真付きで共有する
+                    写真付きでLINE共有
                   </button>
                 )}
               </div>
@@ -278,6 +284,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
         )}
       </section>
 
+      {/* 予告セクション */}
       <section className="space-y-4">
         <div className="flex items-center justify-between px-2">
           <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">Next 7 Days</h2>
@@ -308,6 +315,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onUpdate }) => {
         </div>
       </section>
 
+      {/* ルール説明 */}
       <section className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl">
         <div className="flex gap-4">
           <div className="bg-emerald-500 w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
